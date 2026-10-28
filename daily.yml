@@ -1,0 +1,54 @@
+name: The Standard daily video
+on:
+  schedule:
+    - cron: '15 8 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: the-standard-pages
+  cancel-in-progress: false
+jobs:
+  video:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install free renderer
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+          python -m pip install pillow==12.0.0
+      - name: Generate today video
+        run: python daily.py
+      - name: Upload production files to workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-and-caption
+          path: |
+            site/daily.mp4
+            site/caption.txt
+          retention-days: 7
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - name: Deploy public video to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+      - name: Publish to Instagram (only after opt-in)
+        if: ${{ vars.AUTO_PUBLISH_INSTAGRAM == 'true' }}
+        env:
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          VIDEO_URL: ${{ steps.deployment.outputs.page_url }}daily.mp4
+        run: |
+          export VIDEO_CAPTION="$(cat site/caption.txt)"
+          python instagram_publish.py
